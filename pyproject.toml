@@ -1,0 +1,122 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pytest-testcontainers-django"
+version = "0.1.0"
+description = "Bridge between pytest-testcontainers and pytest-django: starts the DB container before Django imports settings."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Michał Pasternak", email = "michal.dtz@gmail.com" },
+]
+keywords = [
+    "pytest",
+    "pytest-plugin",
+    "pytest-django",
+    "testcontainers",
+    "docker",
+    "postgres",
+    "redis",
+    "django",
+    "integration-testing",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "pytest >=7.4,<9",
+    "pytest-django >=4",
+    "pytest-testcontainers >=0.1,<2",
+    "testcontainers >=4.7,<5",
+    "tomli >=2 ; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+baseline = ["django-pg-baseline"]
+dev = [
+    "pytest-xdist",
+    "ruff",
+    "pre-commit",
+    "django >=4.2",
+    "django-environ",
+]
+
+[project.urls]
+Homepage = "https://github.com/iplweb/pytest-testcontainers-django"
+Repository = "https://github.com/iplweb/pytest-testcontainers-django"
+Issues = "https://github.com/iplweb/pytest-testcontainers-django/issues"
+Changelog = "https://github.com/iplweb/pytest-testcontainers-django/blob/main/CHANGELOG.md"
+
+[project.entry-points.pytest11]
+testcontainers_django = "pytest_testcontainers_django.plugin"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pytest_testcontainers_django"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/pytest_testcontainers_django",
+    "tests",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.4"
+testpaths = ["tests"]
+markers = [
+    "docker_required: integration test requires a running Docker daemon",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:docker.*",
+    "ignore::DeprecationWarning:testcontainers.*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "B",
+    "UP",
+    "SIM",
+    "RUF",
+]
+ignore = [
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
