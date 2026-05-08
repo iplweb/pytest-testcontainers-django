@@ -232,6 +232,102 @@ postgres_init_scripts = ["{sql.name}"]
     result.assert_outcomes(passed=1)
 
 
+def test_use_django_pg_baseline_triggers_template_default(
+    pytester: pytest.Pytester,
+) -> None:
+    """B2 regression: when only the auto-prepended baseline is in init_scripts,
+    apply_template_default still has to see it to default the template.
+    """
+    sql = pytester.path / "baseline.sql"
+    sql.write_text("-- baseline", encoding="utf-8")
+    _bootstrap(
+        pytester,
+        pyproject_extra="""
+postgres_database = "myapp"
+use_django_pg_baseline = true
+""",
+        conftest_extra=f"""
+import pathlib, sys, types
+fake = types.ModuleType("django_pg_baseline")
+fake.get_baseline_path = lambda: pathlib.Path({str(sql)!r})
+sys.modules["django_pg_baseline"] = fake
+""",
+    )
+    pytester.makepyfile(
+        """
+        import os
+
+        def test_template_defaulted_from_baseline_only():
+            assert os.environ["DJANGO_DB_TEST_TEMPLATE"] == "myapp"
+        """
+    )
+    result = pytester.runpytest("-p", "no:cacheprovider")
+    result.assert_outcomes(passed=1)
+
+
+def test_use_django_pg_baseline_missing_dep_raises(pytester: pytest.Pytester) -> None:
+    """N4 regression: clear error when flag is set but dep isn't installed."""
+    _bootstrap(
+        pytester,
+        pyproject_extra="""
+use_django_pg_baseline = true
+""",
+        conftest_extra="""
+import sys
+# Ensure the import fails inside the hook even if the package is installed
+# at the outer level.
+sys.modules["django_pg_baseline"] = None
+""",
+    )
+    pytester.makepyfile("def test_dummy(): pass")
+    result = pytester.runpytest("-p", "no:cacheprovider")
+    result.stderr.fnmatch_lines(["*django-pg-baseline*"])
+    assert result.ret != 0
+
+
+def test_baseline_path_resolution_does_not_mutate_register_config(
+    pytester: pytest.Pytester,
+) -> None:
+    """B1 regression: re-invoking the hook (or sharing one PostgresService
+    instance across processes via register()) must not keep prepending
+    the baseline path to init_scripts.
+    """
+    sql = pytester.path / "baseline.sql"
+    sql.write_text("-- baseline", encoding="utf-8")
+    _bootstrap(
+        pytester,
+        conftest_extra=f"""
+import pathlib, sys, types
+fake = types.ModuleType("django_pg_baseline")
+fake.get_baseline_path = lambda: pathlib.Path({str(sql)!r})
+sys.modules["django_pg_baseline"] = fake
+
+from pytest_testcontainers_django import (
+    DjangoContainerConfig, PostgresService, register,
+)
+
+# A user might construct one shared config and register it; the hook must
+# not mutate it.
+SHARED_PG = PostgresService(database="myapp")
+register(DjangoContainerConfig(postgres=SHARED_PG, use_django_pg_baseline=True))
+""",
+    )
+    pytester.makepyfile(
+        """
+        def test_init_scripts_not_doubled():
+            from pytest_testcontainers_django import plugin as p
+            from pytest_testcontainers_django import config as c
+            # The user's PostgresService.init_scripts must still be empty —
+            # the hook should have built a NEW config, not pushed onto theirs.
+            registered = c._REGISTERED
+            assert registered is not None
+            assert registered.postgres.init_scripts == [], registered.postgres.init_scripts
+        """
+    )
+    result = pytester.runpytest("-p", "no:cacheprovider")
+    result.assert_outcomes(passed=1)
+
+
 def test_invalid_init_script_path_fails_loudly(pytester: pytest.Pytester) -> None:
     _bootstrap(
         pytester,

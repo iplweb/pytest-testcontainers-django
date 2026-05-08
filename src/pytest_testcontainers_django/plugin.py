@@ -68,7 +68,12 @@ def _is_xdist_worker() -> bool:
 
 
 def _resolve_baseline_path(config: DjangoContainerConfig) -> DjangoContainerConfig:
-    """SPEC §10.3 Path B — auto-prepend django-pg-baseline's path when flagged."""
+    """SPEC §10.3 Path B — auto-prepend django-pg-baseline's path when flagged.
+
+    Returns a new config; never mutates the caller's lists, so re-invocation
+    in the same process (pytester scenarios) doesn't keep prepending the
+    baseline path.
+    """
     if not config.use_django_pg_baseline:
         return config
     try:
@@ -79,9 +84,14 @@ def _resolve_baseline_path(config: DjangoContainerConfig) -> DjangoContainerConf
             "installed. Install it (e.g. `pip install pytest-testcontainers-django"
             "[baseline]`) or set the flag to false."
         ) from exc
+    from dataclasses import replace as _replace
+
     baseline = Path(get_baseline_path())
-    config.postgres.init_scripts.insert(0, baseline)
-    return config
+    new_pg = _replace(
+        config.postgres,
+        init_scripts=[baseline, *config.postgres.init_scripts],
+    )
+    return _replace(config, postgres=new_pg)
 
 
 def _preload_rootdir_conftest(early_config: pytest.Config) -> None:
@@ -130,7 +140,6 @@ def pytest_load_initial_conftests(
 
     rootdir = Path(getattr(early_config, "rootpath", Path.cwd()))
     config = _config.load_config(rootdir)
-    config = _config.apply_template_default(config)
 
     if _config.is_disabled(config, args):
         return
@@ -142,7 +151,13 @@ def pytest_load_initial_conftests(
         _env_snapshot = inject_worker(config)
         return
 
+    # Order matters: baseline resolution may add init scripts; the template
+    # default (SPEC §10.6) reads init_scripts to decide whether to default
+    # ``postgres_template = postgres_database``.  Resolving baseline first
+    # ensures use_django_pg_baseline=true triggers the template default
+    # even when the user didn't list any other postgres_init_scripts.
     config = _resolve_baseline_path(config)
+    config = _config.apply_template_default(config)
     _config.validate(config)
 
     _reuse_active = _config.is_reuse_enabled(config)
