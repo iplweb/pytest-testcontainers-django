@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-08
+
+### Added
+
+- New `[redis]` install extra so `redis_enabled = true` works without a
+  separate `pip install redis` (`testcontainers.redis` imports the Python
+  redis client at module load).
+- `ReuseStaleContainerError` and matching `pytest.UsageError` for the
+  reuse-mode edge case where a pre-existing container is in `dead` /
+  `removing` state — surfaced with the exact `docker rm -f <name>`
+  command instead of letting Docker fail the start with a 409 name
+  conflict.
+
+### Changed
+
+- `__version__` now reads from `importlib.metadata` so it stays in sync
+  with `pyproject.toml`.
+- README Django support matrix marks 4.2 LTS as past EOL (Apr 2026).
+
+### Fixed
+
+- The plugin's own test suite now disables eager-start via a *root*
+  `conftest.py` rather than `tests/conftest.py`.  The root file is
+  preloaded by the plugin's `tryfirst` hook; `tests/conftest.py` is not
+  — meaning the previous setup silently ran every "unit" test against
+  a real Docker daemon when one was available locally (CI was unaffected
+  because it sets the env var explicitly).
+
 ## [0.1.0] - 2026-05-08
 
 Initial release.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pytest-testcontainers-django"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bridge between pytest-testcontainers and pytest-django: starts the DB container before Django imports settings."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -52,12 +52,14 @@ dependencies = [
 
 [project.optional-dependencies]
 baseline = ["django-pg-baseline"]
+redis = ["redis >=4"]
 dev = [
     "pytest-xdist",
     "ruff",
     "pre-commit",
     "django >=4.2",
     "django-environ",
+    "redis >=4",
 ]
 
 [project.urls]

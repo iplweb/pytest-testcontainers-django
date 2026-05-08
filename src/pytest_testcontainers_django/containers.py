@@ -38,6 +38,8 @@ from pytest_testcontainers.containers import (
 )
 from pytest_testcontainers.reuse import reuse_name_for
 
+from pytest_testcontainers_django.errors import ReuseStaleContainerError
+
 logger = logging.getLogger("pytest_testcontainers_django")
 
 
@@ -99,9 +101,16 @@ def _start_or_attach(
     if status in {"exited", "created", "paused"}:
         restart_stopped_or_raise(existing, reuse_name)
         return bind_to_running(container_cls, existing), True
-    # Anything else ("dead", "removing", …): drop through and start fresh.
-    container.with_name(reuse_name)
-    return container, False
+    # "dead" / "removing" / unknown: a fresh start would fail with a 409
+    # name conflict against the stale container, so surface an actionable
+    # error.  The user has to remove the stale container manually because
+    # we won't take destructive action on shared docker state.
+    raise ReuseStaleContainerError(
+        f"reuse-mode container {reuse_name!r} exists but is in state {status!r} — "
+        f"it cannot be restarted and starting a fresh container would conflict on "
+        f"the name. Remove it manually:\n"
+        f"  docker rm -f {reuse_name}"
+    )
 
 
 def start_postgres(

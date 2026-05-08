@@ -24,6 +24,7 @@ import atexit
 import logging
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,7 @@ from pytest_testcontainers_django.containers import (
     start_postgres,
     start_redis,
 )
-from pytest_testcontainers_django.errors import BaselineMissingError
+from pytest_testcontainers_django.errors import BaselineMissingError, ReuseStaleContainerError
 from pytest_testcontainers_django.injection import (
     _Snapshot,
     inject,
@@ -84,14 +85,13 @@ def _resolve_baseline_path(config: DjangoContainerConfig) -> DjangoContainerConf
             "installed. Install it (e.g. `pip install pytest-testcontainers-django"
             "[baseline]`) or set the flag to false."
         ) from exc
-    from dataclasses import replace as _replace
 
     baseline = Path(get_baseline_path())
-    new_pg = _replace(
+    new_pg = replace(
         config.postgres,
         init_scripts=[baseline, *config.postgres.init_scripts],
     )
-    return _replace(config, postgres=new_pg)
+    return replace(config, postgres=new_pg)
 
 
 def _preload_rootdir_conftest(early_config: pytest.Config) -> None:
@@ -191,6 +191,8 @@ def pytest_load_initial_conftests(
             "the host:port your settings expect).\n"
             f"Underlying error: {exc}"
         ) from None
+    except ReuseStaleContainerError as exc:
+        raise pytest.UsageError(f"[pytest-testcontainers-django] {exc}") from None
 
     if (
         _reuse_active

@@ -328,6 +328,91 @@ register(DjangoContainerConfig(postgres=SHARED_PG, use_django_pg_baseline=True))
     result.assert_outcomes(passed=1)
 
 
+REUSE_BOUND_PATCH = """
+from unittest.mock import MagicMock
+from pytest_testcontainers_django import containers as _containers
+from pytest_testcontainers_django.containers import ContainerHandle
+
+
+def _fake_pg_bound(**kwargs):
+    return ContainerHandle(
+        host="127.0.0.1",
+        port=63403,
+        name=kwargs.get("reuse_name"),
+        is_bound_to_existing=True,
+        _instance=MagicMock(),
+        _owns_instance=False,
+    )
+
+
+_containers.start_postgres = _fake_pg_bound
+
+from pytest_testcontainers_django import plugin as _plugin
+_plugin.start_postgres = _fake_pg_bound
+"""
+
+STALE_REUSE_PATCH = """
+from pytest_testcontainers_django import containers as _containers
+from pytest_testcontainers_django.errors import ReuseStaleContainerError
+
+
+def _fake_pg_stale(**kwargs):
+    raise ReuseStaleContainerError(
+        f"reuse-mode container {kwargs.get('reuse_name')!r} exists but is in state 'dead' — "
+        f"it cannot be restarted and starting a fresh container would conflict on "
+        f"the name. Remove it manually:\\n"
+        f"  docker rm -f {kwargs.get('reuse_name')}"
+    )
+
+
+_containers.start_postgres = _fake_pg_stale
+
+from pytest_testcontainers_django import plugin as _plugin
+_plugin.start_postgres = _fake_pg_stale
+"""
+
+
+def test_reuse_mode_with_init_scripts_warns_on_bound_container(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SPEC §10.7: reuse + init_scripts + bound-to-existing → stderr warning
+    that init scripts are not replayed against the existing container.
+    """
+    sql = pytester.path / "baseline.sql"
+    sql.write_text("-- baseline", encoding="utf-8")
+    pytester.makepyprojecttoml(
+        f"""
+[tool.pytest-testcontainers-django]
+postgres_database = "myapp"
+postgres_init_scripts = ["{sql.name}"]
+"""
+    )
+    pytester.makeconftest(REUSE_BOUND_PATCH)
+    pytester.makepyfile("def test_dummy(): pass")
+
+    monkeypatch.setenv("PYTEST_TESTCONTAINERS_REUSE", "1")
+    result = pytester.runpytest_subprocess("-p", "no:cacheprovider", "-s")
+    combined = "\n".join([*result.outlines, *result.errlines])
+    assert "init scripts NOT replayed" in combined, combined
+    result.assert_outcomes(passed=1)
+
+
+def test_reuse_mode_stale_container_raises_usage_error(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When reuse mode finds a dead/removing container, surface an
+    actionable UsageError instead of letting Docker hit a 409 name conflict.
+    """
+    pytester.makepyprojecttoml("[tool.pytest-testcontainers-django]\n")
+    pytester.makeconftest(STALE_REUSE_PATCH)
+    pytester.makepyfile("def test_dummy(): pass")
+
+    monkeypatch.setenv("PYTEST_TESTCONTAINERS_REUSE", "1")
+    result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
+    result.stderr.fnmatch_lines(["*docker rm -f*"])
+    assert result.ret != 0
+
+
 def test_invalid_init_script_path_fails_loudly(pytester: pytest.Pytester) -> None:
     _bootstrap(
         pytester,

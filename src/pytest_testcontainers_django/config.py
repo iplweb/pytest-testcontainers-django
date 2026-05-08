@@ -69,7 +69,7 @@ def _load_pyproject_table(pyproject: Path) -> dict[str, Any]:
     return tool.get("pytest-testcontainers-django", {}) or {}
 
 
-def _resolve_init_scripts(raw: list[str] | list[Path] | None, project_root: Path) -> list[Path]:
+def _resolve_init_scripts(raw: list[str | Path] | None, project_root: Path) -> list[Path]:
     if not raw:
         return []
     out: list[Path] = []
@@ -223,7 +223,6 @@ def is_reuse_enabled(config: DjangoContainerConfig) -> bool:
 
 
 __all__ = [
-    "_reset_registered",
     "apply_template_default",
     "is_disabled",
     "is_reuse_enabled",

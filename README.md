@@ -70,12 +70,12 @@ Authoritative upstream: <https://docs.djangoproject.com/en/dev/faq/install/#what
 
 | Django  | 3.10 | 3.11 | 3.12 | 3.13 | Status                       |
 |---------|------|------|------|------|------------------------------|
-| 4.2 LTS | ✓    | ✓    | ✓    | —    | Extended support to Apr 2026 |
+| 4.2 LTS | ✓    | ✓    | ✓    | —    | EOL Apr 2026 (still works)   |
 | 5.2 LTS | ✓    | ✓    | ✓    | ✓    | Active LTS                   |
 
-EOL Django releases (5.0, 5.1) are not listed but should still work —
-this package only consumes pytest-django's hook surface, not Django
-internals.  Open an issue if you need an LTS-only reassurance.
+EOL Django releases (4.2, 5.0, 5.1) are not actively tested but should
+still work — this package only consumes pytest-django's hook surface,
+not Django internals.  Open an issue if you need an LTS-only reassurance.
 
 ## Install
 
@@ -173,6 +173,15 @@ Combine with the `DATABASES['default']['TEST']['TEMPLATE']` snippet
 above to make `pytest --create-db` finish in seconds.
 
 ## Optional Redis
+
+`testcontainers`'s `RedisContainer` imports the `redis` Python client at
+module load, so install it alongside this package when you enable Redis:
+
+```bash
+uv add 'pytest-testcontainers-django[redis]'
+# or
+pip install 'pytest-testcontainers-django[redis]'
+```
 
 ```toml
 [tool.pytest-testcontainers-django]
