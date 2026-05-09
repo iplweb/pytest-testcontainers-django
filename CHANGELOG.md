@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-09
+
+### Changed
+
+- The rootdir-conftest preload (the mechanism that lets `register()` calls
+  run before pytest-django's hook) now logs at DEBUG level — instead of
+  emitting a full WARNING-level traceback — when the import fails because
+  Django settings aren't configured yet.  This is the common case when a
+  conftest transitively imports `model_bakery >= 1.20`, which calls
+  `apps.is_installed(...)` at module import time.  The conftest is still
+  re-imported by pytest's normal trylast loader after our env injection
+  and pytest-django run, so tests work as before — only the noisy
+  traceback at the end of the run is gone.  Unrelated conftest errors
+  (anything not chaining to `ImproperlyConfigured`) keep the original
+  WARNING + traceback behaviour.
+
 ## [0.2.0] - 2026-05-08
 
 ### Added

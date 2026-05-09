@@ -94,6 +94,23 @@ def _resolve_baseline_path(config: DjangoContainerConfig) -> DjangoContainerConf
     return replace(config, postgres=new_pg)
 
 
+def _is_django_not_configured(exc: BaseException) -> bool:
+    """Walk ``__cause__`` / ``__context__`` for Django's ``ImproperlyConfigured``.
+
+    Matched by type name to avoid importing Django from this plugin (preload
+    runs before Django is configured, and the plugin must work in setups
+    where Django is loaded lazily).
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if type(cur).__name__ == "ImproperlyConfigured":
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
 def _preload_rootdir_conftest(early_config: pytest.Config) -> None:
     """Force-import the rootdir ``conftest.py`` so its ``register()`` calls run.
 
@@ -117,9 +134,28 @@ def _preload_rootdir_conftest(early_config: pytest.Config) -> None:
             rootpath,
             consider_namespace_packages=consider_namespace_packages,
         )
-    except Exception:
-        # Conftest import failure here would re-raise from pytest's own
-        # trylast loader anyway — we just preload, never swallow.
+    except Exception as exc:
+        if _is_django_not_configured(exc):
+            # Expected at preload time: the conftest transitively imports code
+            # that touches Django settings (e.g. model_bakery>=1.20 calls
+            # apps.is_installed() at module import). Our hook runs before
+            # pytest-django has configured DJANGO_SETTINGS_MODULE, so the
+            # import fails here.  Pytest's own trylast loader will re-import
+            # the conftest later (after Django is configured *and* after our
+            # env injection has populated DB host/port), where it will
+            # succeed.  Caveat: any register() calls *before* the failing
+            # import won't run early — users hitting this should configure
+            # via pyproject.toml's [tool.pytest-testcontainers-django]
+            # instead, or move the offending import.
+            logger.debug(
+                "preloading rootdir conftest.py deferred: Django settings "
+                "not configured yet (will be re-imported by pytest's normal "
+                "loader)"
+            )
+            return
+        # Real conftest error — pytest's trylast loader would re-raise it
+        # with a full traceback anyway; we surface it here too so users see
+        # it once even if something masks the later re-raise.
         logger.exception("preloading rootdir conftest.py raised; continuing")
 
 

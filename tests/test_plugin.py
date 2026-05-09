@@ -426,6 +426,58 @@ postgres_init_scripts = ["does/not/exist.sql"]
     assert result.ret != 0
 
 
+def test_preload_quiet_when_conftest_hits_django_not_configured(
+    pytester: pytest.Pytester,
+) -> None:
+    """Regression: when the user's conftest transitively imports code that
+    touches Django settings before they're configured (e.g. ``model_bakery``
+    >= 1.20 calling ``apps.is_installed`` at module import), our preload
+    fails.  That failure is benign — pytest's normal trylast loader will
+    re-import the conftest later, after our env injection and pytest-django
+    have run — so we should NOT print a full traceback for it.
+
+    The conftest below raises a locally-defined ``ImproperlyConfigured`` on
+    its first import and lets the second (pytest core's) import succeed,
+    matching the real-world flow.
+    """
+    sentinel = """
+import sys
+if not getattr(sys, "_ttd_preload_seen", False):
+    sys._ttd_preload_seen = True
+    class ImproperlyConfigured(Exception):
+        pass
+    raise ImproperlyConfigured(
+        "Requested setting INSTALLED_APPS, but settings are not configured."
+    )
+"""
+    _bootstrap(pytester, conftest_extra=sentinel)
+    pytester.makepyfile("def test_dummy(): pass")
+    result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
+    result.assert_outcomes(passed=1)
+    combined = "\n".join([*result.outlines, *result.errlines])
+    assert "Traceback" not in combined, combined
+    assert "preloading rootdir conftest.py raised" not in combined, combined
+
+
+def test_preload_still_logs_traceback_for_unrelated_conftest_errors(
+    pytester: pytest.Pytester,
+) -> None:
+    """The quiet-on-ImproperlyConfigured shortcut must NOT swallow other
+    conftest import errors.  A plain ``ValueError`` should still surface
+    with a traceback (either from our own logger.exception during preload,
+    or from pytest's trylast loader when it re-imports and fails again).
+    """
+    sentinel = """
+raise ValueError("definitely not a django problem")
+"""
+    _bootstrap(pytester, conftest_extra=sentinel)
+    pytester.makepyfile("def test_dummy(): pass")
+    result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
+    combined = "\n".join([*result.outlines, *result.errlines])
+    assert "definitely not a django problem" in combined, combined
+    assert result.ret != 0
+
+
 def test_hook_runs_before_pytest_django_default_priority(
     pytester: pytest.Pytester,
 ) -> None:
