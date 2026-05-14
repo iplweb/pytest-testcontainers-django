@@ -511,3 +511,119 @@ def test_hook_runs_before_pytest_django_default_priority(
     )
     result = pytester.runpytest("-p", "no:cacheprovider")
     result.assert_outcomes(passed=1)
+
+
+def test_reset_django_settings_evicts_cached_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Unit test for :func:`_reset_django_settings_if_loaded`.
+
+    Simulates the controller-path scenario: the rootdir-conftest preload
+    transitively touched ``django.conf.settings``, freezing a stale port.
+    After the helper runs, ``settings`` must be back to unconfigured AND
+    the settings module must be gone from ``sys.modules`` so the next
+    import re-runs module-level code against the corrected env.
+    """
+    import importlib
+    import sys
+
+    from django.conf import empty, settings
+
+    from pytest_testcontainers_django.plugin import _reset_django_settings_if_loaded
+
+    pkg_dir = tmp_path / "_ttd_fake_settings_pkg"
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+    (pkg_dir / "stale.py").write_text(
+        "import os\n"
+        "FROZEN_PORT = os.environ.get('PT_TTD_PORT', '5432')\n"
+        "SECRET_KEY = 'x'\n"
+        "INSTALLED_APPS = []\n"
+        "DATABASES = {}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    tmp_pkg = "_ttd_fake_settings_pkg"
+    tmp_mod = f"{tmp_pkg}.stale"
+    sys.modules.pop(tmp_pkg, None)
+    sys.modules.pop(tmp_mod, None)
+
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", tmp_mod)
+    monkeypatch.setenv("PT_TTD_PORT", "5432")
+    settings._wrapped = empty
+    assert settings.FROZEN_PORT == "5432"  # triggers lazy load
+    assert settings.configured
+
+    monkeypatch.setenv("PT_TTD_PORT", "63403")
+    # Cached settings still hold the stale port until we reset.
+    assert settings.FROZEN_PORT == "5432"
+
+    _reset_django_settings_if_loaded()
+
+    assert not settings.configured, "_wrapped must be reset to empty"
+    assert tmp_mod not in sys.modules, "stale settings module must be evicted"
+    # The parent package (e.g. ``django_bpp.settings``) does NOT need to
+    # be evicted — re-importing the leaf settings module triggers
+    # ``from .base import *`` which re-runs base.py module-level code
+    # regardless of whether the package __init__ is fresh.  We do, however,
+    # need to evict siblings (``base``) so they don't return cached.
+    # Re-binding LazySettings re-imports the module, observing the
+    # corrected env.
+    assert settings.FROZEN_PORT == "63403", "post-reset must observe injected env"
+
+    settings._wrapped = empty
+    sys.modules.pop(tmp_mod, None)
+    sys.modules.pop(tmp_pkg, None)
+    _ = importlib  # silence unused-import lint
+
+
+def test_settings_loaded_in_preload_observe_injected_port(
+    pytester: pytest.Pytester,
+) -> None:
+    """End-to-end regression: a rootdir conftest that touches Django
+    settings at module top level (the BPP-style ``from django.utils.translation
+    import activate``) must NOT freeze the pre-injection DB port.
+
+    Without the fix, settings load during preload (before env injection)
+    with the developer's local ``DJANGO_DB_PORT``; the test then sees that
+    stale value instead of the injected ``63403``.  With the fix, the
+    plugin evicts the cached Settings after injection, so the next access
+    re-imports the settings module against the corrected env.
+    """
+    (pytester.path / "fake_settings.py").write_text(
+        "import os\n"
+        "SECRET_KEY = 'x'\n"
+        "INSTALLED_APPS = []\n"
+        "DATABASES = {\n"
+        "    'default': {\n"
+        "        'ENGINE': 'django.db.backends.postgresql',\n"
+        "        'NAME': 'x', 'USER': 'x', 'PASSWORD': 'x', 'HOST': 'x',\n"
+        "        'PORT': os.environ.get('DJANGO_DB_PORT', 'unset'),\n"
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    preload_trigger = """
+import os
+# Unconditional set (setdefault is a no-op if the parent shell exports
+# DJANGO_SETTINGS_MODULE as an empty string, which happens e.g. when the
+# outer pytest is launched with ``DJANGO_SETTINGS_MODULE= pytest …``).
+os.environ["DJANGO_SETTINGS_MODULE"] = "fake_settings"
+from django.conf import settings
+_ = settings.DATABASES  # forces lazy load before plugin injection runs
+"""
+    _bootstrap(pytester, conftest_extra=preload_trigger)
+
+    pytester.makepyfile(
+        """
+        def test_post_inject_port_is_observed():
+            from django.conf import settings
+            assert settings.DATABASES["default"]["PORT"] == "63403", (
+                "preload-loaded settings were not reset; port is "
+                f"{settings.DATABASES['default']['PORT']!r}"
+            )
+        """
+    )
+    result = pytester.runpytest_subprocess("-p", "no:cacheprovider")
+    result.assert_outcomes(passed=1)

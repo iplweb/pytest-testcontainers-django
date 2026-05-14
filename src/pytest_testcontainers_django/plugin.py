@@ -111,6 +111,62 @@ def _is_django_not_configured(exc: BaseException) -> bool:
     return False
 
 
+def _reset_django_settings_if_loaded() -> None:
+    """Evict Django's cached settings if a preload triggered an early load.
+
+    The rootdir conftest can transitively import code that touches
+    ``django.conf.settings`` at module top level (e.g. a stray
+    ``from django.utils.translation import activate``).  When that happens
+    during :func:`_preload_rootdir_conftest`, Django's lazy ``settings``
+    binds to a ``Settings`` instance built from the **pre-injection**
+    environment — ``DATABASES["default"]["PORT"]`` is frozen to whatever
+    was in ``os.environ`` *before* we started a container and updated it.
+
+    Pytest-django's later ``django.setup()`` reuses that cached Settings
+    (and the already-imported settings module — Python caches modules in
+    ``sys.modules``), so test sessions open psycopg connections to the
+    stale port.  Symptom: ``connection to server at "localhost", port 5432
+    failed`` while ``DJANGO_BPP_DB_PORT`` in ``os.environ`` is the random
+    container port.
+
+    The pytest-xdist controller doesn't observe this because workers are
+    fresh subprocesses that re-import everything against the injected env;
+    only the **serial** path (no ``-n``) hits the cached settings, which
+    is why "with ``-n auto`` it works, serially it fails" is the classic
+    bug report.
+
+    Fix: drop ``LazySettings._wrapped`` *and* evict the user's settings
+    package from ``sys.modules`` so the next access re-runs module-level
+    code (where ``DATABASES`` is built from ``env("…_DB_PORT")``) against
+    the now-corrected environment.
+
+    No-op if Django was never imported, settings aren't configured, or
+    ``SETTINGS_MODULE`` is missing (``settings.configure()`` was used
+    in-process).
+    """
+    if "django.conf" not in sys.modules:
+        return
+    try:
+        from django.conf import empty, settings
+    except Exception:  # pragma: no cover — defensive
+        logger.exception("could not import django.conf to reset settings")
+        return
+    if not settings.configured:
+        return
+    settings_module = getattr(settings, "SETTINGS_MODULE", None)
+    settings._wrapped = empty
+    if not settings_module:
+        return
+    # Settings files often import siblings (e.g. ``local.py`` does
+    # ``from .base import *``).  Evict the whole settings sub-package so
+    # module-level code (the ``DATABASES = {...}`` dict, etc.) re-runs
+    # against the corrected environment.
+    pkg_prefix = settings_module.rsplit(".", 1)[0] + "." if "." in settings_module else None
+    for name in list(sys.modules):
+        if name == settings_module or (pkg_prefix is not None and name.startswith(pkg_prefix)):
+            del sys.modules[name]
+
+
 def _preload_rootdir_conftest(early_config: pytest.Config) -> None:
     """Force-import the rootdir ``conftest.py`` so its ``register()`` calls run.
 
@@ -253,6 +309,14 @@ def pytest_load_initial_conftests(
         redis_host=_redis_handle.host if _redis_handle is not None else None,
         redis_port=_redis_handle.port if _redis_handle is not None else None,
     )
+
+    # If the rootdir-conftest preload triggered an early Django settings
+    # load (e.g. via a top-level ``from django.utils.translation import
+    # activate``), the cached Settings instance was built before our env
+    # injection — drop it so pytest-django's ``django.setup()`` re-reads
+    # the now-correct ports.  Critical for the serial (no-``-n``) path;
+    # xdist workers don't observe this because they're fresh subprocesses.
+    _reset_django_settings_if_loaded()
 
     if not _atexit_registered:
         atexit.register(_atexit_stop)

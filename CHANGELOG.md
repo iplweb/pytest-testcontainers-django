@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-14
+
+### Fixed
+
+- Serial (no-`-n`) pytest runs no longer connect to the developer's local
+  Postgres port instead of the testcontainer port.  Root cause: the
+  rootdir-conftest preload (the mechanism that lets `register()` calls
+  run before pytest-django's hook) can transitively touch
+  `django.conf.settings` at module top level — e.g. a BPP-style
+  `from django.utils.translation import activate` in `conftest.py`.  That
+  triggers Django's lazy `Settings` to bind **before** we inject the
+  container's host/port into `os.environ`, freezing
+  `DATABASES["default"]["PORT"]` to whatever the developer's `.env` or
+  shell had set (commonly `5432`).  Pytest-django's later `django.setup()`
+  reused that stale cache, so tests opened psycopg connections to the
+  wrong port.  pytest-xdist runs accidentally hid the bug because
+  workers are fresh subprocesses that re-import everything against the
+  injected env.  Fix: after `inject()` succeeds, evict the cached
+  `LazySettings._wrapped` and drop the user's settings sub-package from
+  `sys.modules`, so the next access (pytest-django's `django.setup()`)
+  re-imports module-level code with the now-corrected environment.
+
 ## [0.2.1] - 2026-05-09
 
 ### Changed
