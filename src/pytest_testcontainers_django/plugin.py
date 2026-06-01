@@ -94,18 +94,32 @@ def _resolve_baseline_path(config: DjangoContainerConfig) -> DjangoContainerConf
     return replace(config, postgres=new_pg)
 
 
-def _is_django_not_configured(exc: BaseException) -> bool:
-    """Walk ``__cause__`` / ``__context__`` for Django's ``ImproperlyConfigured``.
+# Django's two "not ready yet" signals, both of which a rootdir-conftest
+# preload can legitimately trigger before pytest-django has run
+# ``django.setup()``.  Matched by class name (not isinstance) so the plugin
+# never imports Django itself — preload runs before Django is configured and
+# the plugin must work where Django is loaded lazily.  ``apps.is_installed()``
+# (called at import by ``model_bakery`` >= 1.20) raises ``ImproperlyConfigured``
+# when ``DJANGO_SETTINGS_MODULE`` is unset, but ``AppRegistryNotReady`` when
+# settings *are* configured yet the app registry has not been populated — the
+# latter is a sibling class, NOT a subclass, so it must be listed explicitly.
+_DJANGO_NOT_READY_EXC_NAMES = frozenset({"ImproperlyConfigured", "AppRegistryNotReady"})
 
-    Matched by type name to avoid importing Django from this plugin (preload
-    runs before Django is configured, and the plugin must work in setups
-    where Django is loaded lazily).
+
+def _is_django_not_ready(exc: BaseException) -> bool:
+    """Walk ``__cause__`` / ``__context__`` for a Django "not ready yet" signal.
+
+    Returns ``True`` if any exception in the chain is one of
+    :data:`_DJANGO_NOT_READY_EXC_NAMES` (matched by type name) — meaning the
+    preload import failed only because Django settings/apps were not ready,
+    which is benign: pytest's normal trylast loader re-imports the conftest
+    later, after ``django.setup()``, where it succeeds.
     """
     seen: set[int] = set()
     cur: BaseException | None = exc
     while cur is not None and id(cur) not in seen:
         seen.add(id(cur))
-        if type(cur).__name__ == "ImproperlyConfigured":
+        if type(cur).__name__ in _DJANGO_NOT_READY_EXC_NAMES:
             return True
         cur = cur.__cause__ or cur.__context__
     return False
@@ -191,22 +205,23 @@ def _preload_rootdir_conftest(early_config: pytest.Config) -> None:
             consider_namespace_packages=consider_namespace_packages,
         )
     except Exception as exc:
-        if _is_django_not_configured(exc):
+        if _is_django_not_ready(exc):
             # Expected at preload time: the conftest transitively imports code
-            # that touches Django settings (e.g. model_bakery>=1.20 calls
+            # that touches Django settings/apps (e.g. model_bakery>=1.20 calls
             # apps.is_installed() at module import). Our hook runs before
-            # pytest-django has configured DJANGO_SETTINGS_MODULE, so the
-            # import fails here.  Pytest's own trylast loader will re-import
-            # the conftest later (after Django is configured *and* after our
-            # env injection has populated DB host/port), where it will
-            # succeed.  Caveat: any register() calls *before* the failing
-            # import won't run early — users hitting this should configure
-            # via pyproject.toml's [tool.pytest-testcontainers-django]
-            # instead, or move the offending import.
+            # pytest-django has run django.setup(), so the import fails here
+            # with either ImproperlyConfigured (settings module unset) or
+            # AppRegistryNotReady (settings configured, app registry not yet
+            # populated).  Pytest's own trylast loader will re-import the
+            # conftest later (after Django is set up *and* after our env
+            # injection has populated DB host/port), where it will succeed.
+            # Caveat: any register() calls *before* the failing import won't
+            # run early — users hitting this should configure via
+            # pyproject.toml's [tool.pytest-testcontainers-django] instead,
+            # or move the offending import.
             logger.debug(
-                "preloading rootdir conftest.py deferred: Django settings "
-                "not configured yet (will be re-imported by pytest's normal "
-                "loader)"
+                "preloading rootdir conftest.py deferred: Django not ready "
+                "yet (will be re-imported by pytest's normal loader)"
             )
             return
         # Real conftest error — pytest's trylast loader would re-raise it

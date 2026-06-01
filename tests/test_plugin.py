@@ -459,6 +459,41 @@ if not getattr(sys, "_ttd_preload_seen", False):
     assert "preloading rootdir conftest.py raised" not in combined, combined
 
 
+def test_django_not_ready_predicate_matches_both_deferral_exceptions() -> None:
+    """``_is_django_not_ready`` must recognise BOTH Django "not ready yet"
+    signals raised at preload time, matched by class name (the plugin must
+    not import Django itself):
+
+    * ``ImproperlyConfigured`` — ``DJANGO_SETTINGS_MODULE`` not set; raised
+      when ``apps.is_installed()`` reaches ``settings.INSTALLED_APPS``.
+    * ``AppRegistryNotReady`` — settings *are* configured but
+      ``django.setup()`` / ``apps.populate()`` has not run yet.  This is the
+      common real-world case (``model_bakery`` >= 1.20 calls
+      ``apps.is_installed()`` at import once the settings module is pinned
+      early) and is NOT a subclass of ``ImproperlyConfigured``, so a check
+      for the latter alone misses it.
+
+    Unrelated exceptions (a plain ``ValueError`` etc.) must NOT match, and
+    the predicate must follow the ``__cause__`` / ``__context__`` chain.
+    """
+    from pytest_testcontainers_django.plugin import _is_django_not_ready
+
+    class ImproperlyConfigured(Exception):
+        pass
+
+    class AppRegistryNotReady(Exception):
+        pass
+
+    assert _is_django_not_ready(ImproperlyConfigured("settings not configured"))
+    assert _is_django_not_ready(AppRegistryNotReady("Apps aren't loaded yet."))
+    assert not _is_django_not_ready(ValueError("unrelated"))
+
+    # Chained: the deferral signal hides behind an unrelated wrapper.
+    chained = RuntimeError("import failed")
+    chained.__cause__ = AppRegistryNotReady("Apps aren't loaded yet.")
+    assert _is_django_not_ready(chained)
+
+
 def test_preload_still_logs_traceback_for_unrelated_conftest_errors(
     pytester: pytest.Pytester,
 ) -> None:

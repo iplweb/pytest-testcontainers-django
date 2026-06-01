@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-01
+
+### Fixed
+
+- The rootdir-conftest preload no longer dumps a spurious traceback
+  (`preloading rootdir conftest.py raised; continuing`) when the conftest
+  transitively touches the Django app registry before `django.setup()` has
+  run — e.g. `model_bakery` >= 1.20 calling `apps.is_installed()` at import.
+  0.2.1 added a quiet-deferral shortcut, but it only recognised
+  `ImproperlyConfigured` (raised when `DJANGO_SETTINGS_MODULE` is unset).
+  When the settings module *is* configured early but the app registry has
+  not been populated yet, Django raises the sibling exception
+  `AppRegistryNotReady` ("Apps aren't loaded yet.") instead — which is *not*
+  a subclass of `ImproperlyConfigured`, so the shortcut missed it and the
+  benign deferral was logged as an error. The predicate (renamed
+  `_is_django_not_configured` → `_is_django_not_ready`) now matches both
+  exceptions by class name.
+
 ## [0.2.2] - 2026-05-14
 
 ### Fixed
