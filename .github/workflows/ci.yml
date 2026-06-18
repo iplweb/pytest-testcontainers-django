@@ -14,12 +14,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc  # v6.4.3
+
+      - name: Install dependencies
+        run: |
+          uv venv --python 3.12
+          uv pip install -e '.[dev]'
+
+      - name: Lint
+        run: |
+          source .venv/bin/activate
+          ruff check src tests
+          ruff format --check src tests
+
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
+        pytest-version: ["7", "8", "9"]
+        exclude:
+          # pytest 7.4.x has no Python 3.13 support (added in pytest 8.3).
+          # Keep in sync with the envlist exclusion in tox.ini.
+          - python-version: "3.13"
+            pytest-version: "7"
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -32,23 +62,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc  # v6.4.3
 
-      - name: Install dependencies
-        run: |
-          uv venv --python "$PYVER"
-          uv pip install -e '.[dev]'
+      - name: Run unit tests via tox
         env:
           PYVER: ${{ matrix.python-version }}
-
-      - name: Lint
+          PYTESTVER: ${{ matrix.pytest-version }}
         run: |
-          source .venv/bin/activate
-          ruff check src tests
-          ruff format --check src tests
-
-      - name: Run unit tests
-        env:
-          PYTEST_TESTCONTAINERS_DISABLE: "1"
-          PYTEST_TESTCONTAINERS: "0"
-        run: |
-          source .venv/bin/activate
-          pytest -v
+          uvx --with tox-uv tox -e "py${PYVER//./}-pytest${PYTESTVER}"

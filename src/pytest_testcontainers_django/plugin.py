@@ -196,14 +196,31 @@ def _preload_rootdir_conftest(early_config: pytest.Config) -> None:
     pluginmanager = early_config.pluginmanager
     rootpath = Path(getattr(early_config, "rootpath", Path.cwd()))
     importmode = early_config.getoption("importmode", default="prepend")
-    consider_namespace_packages = bool(early_config.getini("consider_namespace_packages"))
+    # pytest changed its private conftest-loading API across majors, so we
+    # dispatch on method presence (feature detection) rather than a version
+    # number:
+    #   * pytest >= 8.0 exposes ``_loadconftestmodules(path, importmode, rootpath,
+    #     *, consider_namespace_packages)`` together with the matching ini option.
+    #   * pytest 7.x has no such method; ``_getconftestmodules(path, importmode,
+    #     rootpath)`` performs the same conftest-import side effect and has no
+    #     namespace-packages concept (the ini does not exist there either).
+    loadconftestmodules = getattr(pluginmanager, "_loadconftestmodules", None)
     try:
-        pluginmanager._loadconftestmodules(  # type: ignore[attr-defined]
-            rootpath,
-            importmode,
-            rootpath,
-            consider_namespace_packages=consider_namespace_packages,
-        )
+        if loadconftestmodules is not None:
+            loadconftestmodules(
+                rootpath,
+                importmode,
+                rootpath,
+                consider_namespace_packages=bool(
+                    early_config.getini("consider_namespace_packages")
+                ),
+            )
+        else:
+            pluginmanager._getconftestmodules(  # type: ignore[attr-defined]
+                rootpath,
+                importmode,
+                rootpath,
+            )
     except Exception as exc:
         if _is_django_not_ready(exc):
             # Expected at preload time: the conftest transitively imports code

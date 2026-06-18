@@ -156,3 +156,34 @@ Local `tox` runs the same envs against locally available interpreters.
 - Python axis stays 3.10–3.13 (pytest-9 floor is 3.10 — already aligned).
 - No change to plugin source code is anticipated; if a pytest-9 hook-API change
   breaks a test, that fix is tracked as a separate change, not this spec.
+
+## Implementation outcome (2026-06-18)
+
+Running the matrix locally before writing CI surfaced two things the original
+plan did not anticipate:
+
+1. **pytest 7 was broken at the architecture level, not just the cap.** The
+   plugin's preload calls the private `pluginmanager._loadconftestmodules(...)`,
+   which **does not exist in pytest 7** (it is `_getconftestmodules(path,
+   importmode, rootpath)` there, and there is no `consider_namespace_packages`
+   ini). On pytest 7 the call raised, was swallowed by the broad `except`, the
+   rootdir conftest was never preloaded, and 6 tests failed. The package had
+   therefore never actually worked on its advertised `pytest>=7.4` floor.
+   **Decision: keep the 7.4 floor and add a feature-detection shim** in
+   `plugin.py` — dispatch on `getattr(pm, "_loadconftestmodules", None)`; fall
+   back to `_getconftestmodules(path, importmode, rootpath)` on pytest 7. The
+   `consider_namespace_packages` getini now lives inside the pytest-8+ branch
+   (the ini only exists there), so no separate guard is needed.
+
+2. **pytest 9 was hard-blocked upstream, not by our cap.** `pytest-testcontainers
+   0.1.0` (then the only release) pinned `pytest<9`, so lifting our own cap was
+   necessary but not sufficient. This was resolved by the upstream release of
+   `pytest-testcontainers 0.2.0` (`pytest<10,>=7.4`); with it, pytest 9 installs
+   and the suite passes. Our dependency `pytest-testcontainers >=0.1,<2` is
+   unchanged — the resolver selects 0.2.0 automatically whenever pytest 9 is
+   requested.
+
+Verification: full local `tox` matrix (11 cells) green — pytest 7.4.4 / 8.4.2 /
+9.1.0 all 41 passed across Python 3.10-3.13, `py313-pytest7` excluded. `ruff
+check` + `ruff format --check` clean. No pytest 10 exists yet (latest 9.1.0);
+the `<10` cap simply holds a future major out until it is validated the same way.
