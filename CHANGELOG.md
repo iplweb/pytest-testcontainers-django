@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-19
+
+### Fixed
+
+- The plugin now actually works on its advertised `pytest >= 7.4` floor. The
+  rootdir-conftest preload (the mechanism that lets `register()` calls run
+  before pytest-django's hook) called the private `_loadconftestmodules`, which
+  **does not exist in pytest 7** — there the method is `_getconftestmodules`,
+  with a different signature and no `consider_namespace_packages` concept. On
+  pytest 7 the call raised `AttributeError`, was swallowed by the preload's
+  broad `except`, and the rootdir conftest was silently never preloaded, so
+  `register()`-based config and early env injection didn't take effect (6 tests
+  failed). The preload now dispatches on method presence: `_loadconftestmodules`
+  (with `consider_namespace_packages`) on pytest >= 8, falling back to
+  `_getconftestmodules(path, importmode, rootpath)` on pytest 7.
+
+### Added
+
+- Test matrix across pytest 7.x, 8.x and 9.x (Python 3.10–3.13), runnable
+  locally via `tox` (new `tox.ini`, `tox`/`tox-uv` added to the `dev` extra) and
+  mirrored in CI. The `py3.13 × pytest7` cell is excluded (pytest gained Python
+  3.13 support in 8.3). CI also splits linting into its own job.
+
+### Changed
+
+- Relaxed the pytest dependency cap from `<9` to `<10`, so the package installs
+  alongside pytest 9 (validated by the new matrix). Bumped the
+  `pytest-testcontainers` floor to `>= 0.2.0`, the release whose own pytest cap
+  was raised to `<10` (0.1.0 pinned `pytest < 9` and would otherwise block
+  pytest 9 transitively).
+
 ## [0.2.3] - 2026-06-01
 
 ### Fixed
