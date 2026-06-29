@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pytest-testcontainers-django"
-version = "0.2.4"
+version = "0.2.5"
 description = "Bridge between pytest-testcontainers and pytest-django: starts the DB container before Django imports settings."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -47,7 +47,7 @@ dependencies = [
     # Validated against pytest 7/8/9 by the tox + CI matrix before each bump.
     "pytest >=7.4,<10",
     "pytest-django >=4",
-    "pytest-testcontainers >=0.2,<2",
+    "pytest-testcontainers >=0.2.2,<2",
     "testcontainers >=4.7,<5",
     "tomli >=2 ; python_version < '3.11'",
 ]

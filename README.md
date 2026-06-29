@@ -298,6 +298,27 @@ the import-time-read race that this package solves.
 | `redis_port_env`              | `DJANGO_REDIS_PORT`              |                                                  |
 | `use_django_pg_baseline`      | `false`                          | Auto-prepend `django-pg-baseline`'s artifact     |
 
+## Troubleshooting
+
+### `Docker daemon is not reachable` but `docker ps` works
+
+You're almost certainly on a non-default **Docker context** — OrbStack,
+colima, or a Docker Desktop install where `/var/run/docker.sock` is missing
+or a dangling symlink. `docker.from_env()` (used by docker-py *and* by
+testcontainers internally) honors `DOCKER_HOST` but, unlike the `docker`
+CLI, ignores the active `docker context`. The plugin now resolves the active
+context's endpoint for you and exports `DOCKER_HOST` before any container is
+started, so it talks to the same daemon the CLI does.
+
+If it still fails, point it at the daemon explicitly — an explicit
+`DOCKER_HOST` always wins:
+
+```bash
+docker context inspect -f '{{.Endpoints.docker.Host}}'   # see the endpoint
+export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock # e.g. OrbStack
+export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock # e.g. colima
+```
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).

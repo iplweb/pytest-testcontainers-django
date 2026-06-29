@@ -22,6 +22,7 @@ breakage is contained at one spot if #1 evolves.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,7 @@ from pytest_testcontainers.containers import (
     restart_stopped_or_raise,
     start_or_raise,
 )
-from pytest_testcontainers.reuse import reuse_name_for
+from pytest_testcontainers.reuse import container_name_for
 
 from pytest_testcontainers_django.errors import ReuseStaleContainerError
 
@@ -64,8 +65,54 @@ class ContainerHandle:
             logger.exception("cleanup: container.stop() failed")
 
 
+def _ensure_docker_host_env() -> None:
+    """Export ``DOCKER_HOST`` from the active ``docker context`` when unset.
+
+    ``docker.from_env()`` — used by docker-py, by testcontainers' own client,
+    and by Ryuk's socket bind-mount — honors ``DOCKER_HOST`` but, unlike the
+    ``docker`` CLI, ignores the active ``docker context``. On OrbStack /
+    colima / a stopped Docker Desktop the daemon lives on a non-default socket
+    and ``/var/run/docker.sock`` is absent or a dangling symlink, so container
+    launch crashes with ``FileNotFoundError`` even though ``docker ps`` works.
+
+    Exporting ``DOCKER_HOST`` once — before any client is built — makes the
+    whole process resolve Docker the way the CLI does. No-op when
+    ``DOCKER_HOST`` is already set (an explicit choice always wins) or when no
+    context endpoint resolves (fall back to the platform default socket).
+    """
+    if os.environ.get("DOCKER_HOST"):
+        return
+    ctx = _active_docker_context()
+    host = getattr(ctx, "Host", None) if ctx is not None else None
+    if host:
+        os.environ["DOCKER_HOST"] = host
+
+
+def _active_docker_context():  # type: ignore[no-untyped-def]
+    """Return the active ``docker context`` object, or ``None``.
+
+    Resolution failures (older SDK without context support, malformed
+    ``~/.docker/config.json``, missing context) are logged and swallowed so
+    the caller falls back to the platform default socket.
+    """
+    try:
+        from docker.context import ContextAPI
+
+        return ContextAPI.get_current_context()
+    except Exception:
+        logger.debug("could not resolve active docker context", exc_info=True)
+        return None
+
+
 def _check_daemon() -> None:
-    """Wrap #1's daemon ping so callers get a stable exception class."""
+    """Wrap #1's daemon ping so callers get a stable exception class.
+
+    Honors the active ``docker context`` first (exporting ``DOCKER_HOST`` when
+    unset) so the ping — and every later testcontainers/Ryuk client — resolves
+    the same socket the CLI uses on OrbStack / colima / Docker Desktop.
+    """
+    _ensure_docker_host_env()
+
     import docker
     import docker.errors
 
@@ -240,7 +287,7 @@ def _read_existing_host_port(instance: Any, internal_port: int) -> tuple[str, in
 
 def reuse_name(service_slug: str) -> str:
     """Compose a reuse-name for the eager-start path. Single-shared per controller."""
-    return reuse_name_for(service_slug)
+    return container_name_for(service_slug)
 
 
 __all__ = [

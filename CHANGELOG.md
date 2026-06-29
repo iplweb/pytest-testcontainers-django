@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-06-29
+
+### Fixed
+
+- **`[pytest-testcontainers-django] Docker daemon is not reachable` even though
+  `docker ps` worked**, on setups where the daemon lives on a non-default
+  socket (OrbStack, colima, a stopped Docker Desktop). The eager-start daemon
+  check used `docker.from_env()`, which — like `from_env()` everywhere — honors
+  `DOCKER_HOST` but, unlike the `docker` CLI, ignores the active
+  `docker context`, so it fell back to `/var/run/docker.sock` (absent or a
+  dangling symlink) and crashed with `FileNotFoundError`. The plugin now
+  exports `DOCKER_HOST` from the active context before any container client
+  (docker-py, testcontainers, or Ryuk's socket bind-mount) is built. An
+  explicit `DOCKER_HOST` still wins; with no resolvable context it falls back
+  to the platform default socket.
+- Import `container_name_for` instead of the removed `reuse_name_for` from
+  `pytest_testcontainers.reuse`. `pytest-testcontainers` 0.2.1 renamed the
+  function (it had been `reuse_name_for` through 0.2.0), which broke this
+  package at import time. Bumped the `pytest-testcontainers` floor to `>=0.2.2`
+  (the release that both provides `container_name_for` and re-adds a
+  `reuse_name_for` compatibility alias).
+
 ## [0.2.4] - 2026-06-19
 
 ### Fixed
