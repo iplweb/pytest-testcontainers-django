@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support for Django 6.0 and 6.1: added the `Framework :: Django :: 6.0`
+  and `:: 6.1` trove classifiers, and a dedicated `django61` tox env / CI
+  job that runs the suite against `Django~=6.1.0` on Python 3.13 (Django
+  6.x requires Python >=3.12). The main CI matrix stays a pytest matrix —
+  Django remains a dev-only dependency of this plugin.
+
 ## [0.2.5] - 2026-06-29
 
 ### Fixed
