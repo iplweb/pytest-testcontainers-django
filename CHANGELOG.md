@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-07
+
+### Changed
+
+- **Ephemeral (non-reuse) containers are now named**
+  `<project>-tc-<service>-…` like reuse containers, plus a random suffix.
+  They were previously left unnamed, so Docker assigned names like
+  `goofy_torvalds`: invisible to `pytest --testcontainers-clean`, which
+  selects on the `<project>-tc-` prefix, and impossible to attribute to a run
+  when staring at `docker ps`. Two runs of the same branch still cannot
+  collide on the name.
+- **The Ryuk reaper is shut down at the end of the session**, after the
+  container handles are stopped. testcontainers otherwise leaves it idling for
+  the remainder of its reconnection timeout. Skipped when nothing was started
+  (plugin disabled, xdist worker) so those runs do not import testcontainers
+  just to no-op.
+- Ephemeral containers also inherit the `SIGTERM` / `SIGHUP` teardown added in
+  `pytest-testcontainers` 0.3.0, so a killed run removes them immediately
+  instead of leaving them to Ryuk.
+
+### Fixed
+
+- Requires `pytest-testcontainers >= 0.3.0`. The floor was `>= 0.2.2`, but the
+  plugin now imports `shutdown_ryuk` / `ryuk_maybe_running`, which do not exist
+  in earlier releases — an install resolving an older one would fail at import.
+
 ## [0.2.5] - 2026-06-29
 
 ### Fixed
