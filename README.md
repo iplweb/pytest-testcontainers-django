@@ -72,10 +72,19 @@ Authoritative upstream: <https://docs.djangoproject.com/en/dev/faq/install/#what
 |---------|------|------|------|------|------------------------------|
 | 4.2 LTS | ✓    | ✓    | ✓    | —    | EOL Apr 2026 (still works)   |
 | 5.2 LTS | ✓    | ✓    | ✓    | ✓    | Active LTS                   |
+| 6.0     | —    | —    | ✓    | ✓    | Requires Python >=3.12       |
+| 6.1     | —    | —    | ✓    | ✓    | Tested in CI (Python 3.13)   |
 
-EOL Django releases (4.2, 5.0, 5.1) are not actively tested but should
-still work — this package only consumes pytest-django's hook surface,
-not Django internals.  Open an issue if you need an LTS-only reassurance.
+Django 6.0 and 6.1 require Python 3.12 or newer, so they are unavailable
+on the 3.10/3.11 rows.
+
+CI's test matrix is a **pytest** matrix (this is a pytest plugin, and
+Django is only a dev dependency), plus one dedicated job that pins
+`Django~=6.1.0` on Python 3.13 — see the `django61` tox env.  EOL Django
+releases (4.2, 5.0, 5.1) are not actively tested but should still work —
+this package only consumes pytest-django's hook surface, and touches just
+a couple of long-stable Django internals.  Open an issue if you need an
+LTS-only reassurance.
 
 ## Install
 
