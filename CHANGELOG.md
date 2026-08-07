@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-07
+
+### Fixed
+
+- **A container killed while it was still booting was left behind.** Teardown
+  was armed after `start_or_raise()` returned, but that call blocks until the
+  wait strategy passes — many seconds for a Postgres replaying init scripts,
+  which is exactly this plugin's normal case. Both `start_postgres` and
+  `start_redis` now arm teardown before starting. Requires
+  `pytest-testcontainers >= 0.3.1`, which does the same in its maker layer.
+- Test suite no longer fails against testcontainers >= 4.15, which deprecated
+  `testcontainers.<service>` with `stacklevel=2` — Python attributes the
+  warning to the importing module, so the existing module-keyed ignore could
+  not match it.
+
 ## [0.3.0] - 2026-08-07
 
 ### Changed

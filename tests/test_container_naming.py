@@ -106,6 +106,61 @@ def test_bound_existing_container_is_not_renamed(monkeypatch: pytest.MonkeyPatch
 
 
 # --------------------------------------------------------------------------
+# Teardown is armed before the container starts
+# --------------------------------------------------------------------------
+def _trace_start(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Record the order of arm-vs-start inside start_postgres/start_redis."""
+    order: list[str] = []
+    monkeypatch.setattr(containers, "_check_daemon", lambda: None)
+    monkeypatch.setattr(containers, "register_atexit_stop", lambda c: order.append("armed"))
+    monkeypatch.setattr(containers, "start_or_raise", lambda c, image: order.append("started"))
+    return order
+
+
+class _StubInstance:
+    """Enough of a DockerContainer for the post-start bookkeeping."""
+
+    def get_container_host_ip(self) -> str:
+        return "127.0.0.1"
+
+    def get_exposed_port(self, port: int) -> str:
+        return "54321"
+
+
+def test_postgres_teardown_armed_before_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The wait strategy for an init-script-seeded Postgres runs for seconds."""
+    order = _trace_start(monkeypatch)
+    monkeypatch.setattr(containers, "_start_or_attach", lambda c, **kw: (_StubInstance(), False))
+    containers.start_postgres(
+        image="postgres:16",
+        user="u",
+        password="p",
+        database="d",
+        internal_port=5432,
+        env={},
+        init_scripts=[],
+        reuse_name=None,
+    )
+    assert order.index("armed") < order.index("started"), order
+
+
+def test_redis_teardown_armed_before_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _trace_start(monkeypatch)
+    monkeypatch.setattr(containers, "_start_or_attach", lambda c, **kw: (_StubInstance(), False))
+    containers.start_redis(image="redis:7-alpine", internal_port=6379, reuse_name=None)
+    assert order.index("armed") < order.index("started"), order
+
+
+def test_reuse_mode_never_arms_teardown(monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _trace_start(monkeypatch)
+    monkeypatch.setattr(containers, "_start_or_attach", lambda c, **kw: (_StubInstance(), False))
+    containers.start_redis(
+        image="redis:7-alpine", internal_port=6379, reuse_name="myproj-tc-redis-main"
+    )
+    assert "armed" not in order
+
+
+# --------------------------------------------------------------------------
 # Ryuk shutdown
 # --------------------------------------------------------------------------
 def test_stop_and_restore_shuts_ryuk_down(monkeypatch: pytest.MonkeyPatch) -> None:

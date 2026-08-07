@@ -217,9 +217,13 @@ def start_postgres(
             _owns_instance=False,
         )
 
-    start_or_raise(instance, image)
+    # Arm teardown BEFORE starting: `.start()` blocks until the wait strategy
+    # passes — for a Postgres seeded from init scripts that is many seconds,
+    # during which the container exists and nothing would remove it if the run
+    # is killed. `stop()` is a no-op while the wrapper has no container yet.
     if reuse_name is None:
         register_atexit_stop(instance)
+    start_or_raise(instance, image)
 
     host = instance.get_container_host_ip()
     port = int(instance.get_exposed_port(internal_port))
@@ -258,9 +262,13 @@ def start_redis(
             _owns_instance=False,
         )
 
-    start_or_raise(instance, image)
+    # Arm teardown BEFORE starting: `.start()` blocks until the wait strategy
+    # passes — for a Postgres seeded from init scripts that is many seconds,
+    # during which the container exists and nothing would remove it if the run
+    # is killed. `stop()` is a no-op while the wrapper has no container yet.
     if reuse_name is None:
         register_atexit_stop(instance)
+    start_or_raise(instance, image)
 
     host = instance.get_container_host_ip()
     port = int(instance.get_exposed_port(internal_port))

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pytest-testcontainers-django"
-version = "0.3.0"
+version = "0.3.1"
 description = "Bridge between pytest-testcontainers and pytest-django: starts the DB container before Django imports settings."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -49,7 +49,7 @@ dependencies = [
     # Validated against pytest 7/8/9 by the tox + CI matrix before each bump.
     "pytest >=7.4,<10",
     "pytest-django >=4",
-    "pytest-testcontainers >=0.3.0,<2",
+    "pytest-testcontainers >=0.3.1,<2",
     "testcontainers >=4.7,<5",
     "tomli >=2 ; python_version < '3.11'",
 ]
@@ -101,6 +101,13 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning:docker.*",
     "ignore::DeprecationWarning:testcontainers.*",
+    # testcontainers >=4.15 moved the service modules under
+    # `testcontainers.community.*` and deprecated the old paths. It warns with
+    # stacklevel=2, so Python attributes the warning to *our* importing module,
+    # not to `testcontainers.*` — the module-keyed ignore above cannot match it.
+    # We keep the old paths because they are the only ones present across the
+    # whole supported range (testcontainers >=4.7,<5).
+    "ignore:testcontainers\\..* is deprecated:DeprecationWarning",
 ]
 
 [tool.ruff]
