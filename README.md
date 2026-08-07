@@ -242,6 +242,24 @@ PYTEST_TESTCONTAINERS_DISABLE=1 pytest
 PYTEST_TESTCONTAINERS_REUSE=1 pytest
 ```
 
+Reuse names encode the git branch, so every branch and worktree parks its
+own Postgres + Redis pair — and reuse mode disables Ryuk, so nothing ever
+expires them. Sweep them up with `pytest --testcontainers-clean` (see
+`pytest-testcontainers`' README for the shared-host caveat).
+
+## Teardown
+
+Containers are named `<project>-tc-<service>-…` whether or not reuse is on,
+so they are greppable in `docker ps` and reachable by
+`pytest --testcontainers-clean`.
+
+Ephemeral (non-reuse) containers are removed by `pytest_unconfigure`, by a
+`SIGTERM`/`SIGHUP` handler, and by `atexit` — whichever fires first. The
+Ryuk reaper is shut down explicitly at the end of the session instead of
+being left to idle out. Both mechanisms live in `pytest-testcontainers`;
+see its README for the details and for what still falls through on
+`SIGKILL`.
+
 ## pytest-xdist
 
 Workers inherit the controller's environment on fork, so they don't

@@ -35,6 +35,8 @@ from pytest_testcontainers.containers import (
     find_existing_container,
     register_atexit_stop,
     restart_stopped_or_raise,
+    ryuk_maybe_running,
+    shutdown_ryuk,
     start_or_raise,
 )
 from pytest_testcontainers.reuse import container_name_for
@@ -126,13 +128,21 @@ def _start_or_attach(
     container: Any,
     *,
     reuse_name: str | None,
+    fallback_name: str,
 ) -> tuple[Any, bool]:
     """Start *container*, or attach to a pre-existing one when reuse is on.
 
     Returns ``(instance, is_bound_to_existing)``.  When bound to existing,
     the caller MUST NOT register atexit stop and MUST NOT call ``stop()``.
+
+    ``fallback_name`` names the container when reuse is off.  Ephemeral
+    containers used to be left unnamed, which handed them a random Docker
+    name (``goofy_torvalds``) — invisible to ``--testcontainers-clean``,
+    which selects on the ``<project>-tc-`` prefix, and unattributable by a
+    human reading ``docker ps``.
     """
     if reuse_name is None:
+        container.with_name(fallback_name)
         return container, False
 
     disable_ryuk_once()
@@ -194,7 +204,8 @@ def start_postgres(
             "ro",
         )
 
-    instance, bound = _start_or_attach(container, reuse_name=reuse_name)
+    name = reuse_name or ephemeral_name("psql")
+    instance, bound = _start_or_attach(container, reuse_name=reuse_name, fallback_name=name)
     if bound:
         host, port = _read_existing_host_port(instance, internal_port)
         return ContainerHandle(
@@ -215,7 +226,7 @@ def start_postgres(
     return ContainerHandle(
         host=_normalize_host(host),
         port=port,
-        name=reuse_name,
+        name=name,
         is_bound_to_existing=False,
         _instance=instance,
         _owns_instance=reuse_name is None,
@@ -234,7 +245,8 @@ def start_redis(
     _check_daemon()
 
     container = RedisContainer(image=image, port=internal_port)
-    instance, bound = _start_or_attach(container, reuse_name=reuse_name)
+    name = reuse_name or ephemeral_name("redis")
+    instance, bound = _start_or_attach(container, reuse_name=reuse_name, fallback_name=name)
     if bound:
         host, port = _read_existing_host_port(instance, internal_port)
         return ContainerHandle(
@@ -255,7 +267,7 @@ def start_redis(
     return ContainerHandle(
         host=_normalize_host(host),
         port=port,
-        name=reuse_name,
+        name=name,
         is_bound_to_existing=False,
         _instance=instance,
         _owns_instance=reuse_name is None,
@@ -290,10 +302,23 @@ def reuse_name(service_slug: str) -> str:
     return container_name_for(service_slug)
 
 
+def ephemeral_name(service_slug: str) -> str:
+    """Compose a one-shot container name for the non-reuse path.
+
+    Same template as reuse names plus a random suffix, so the container is
+    greppable and attributable while two runs of the same branch still
+    never collide on the name.
+    """
+    return container_name_for(service_slug, reuse_mode=False)
+
+
 __all__ = [
     "ContainerHandle",
     "DockerNotRunningError",
+    "ephemeral_name",
     "reuse_name",
+    "ryuk_maybe_running",
+    "shutdown_ryuk",
     "start_postgres",
     "start_redis",
 ]

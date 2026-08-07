@@ -35,6 +35,8 @@ from pytest_testcontainers_django.containers import (
     ContainerHandle,
     DockerNotRunningError,
     reuse_name,
+    ryuk_maybe_running,
+    shutdown_ryuk,
     start_postgres,
     start_redis,
 )
@@ -381,6 +383,14 @@ def _stop_and_restore(*, reuse: bool) -> None:
                 logger.exception("error stopping redis container")
     _pg_handle = None
     _redis_handle = None
+
+    # Ryuk last: it is the net for anything the explicit stops missed, and
+    # testcontainers never shuts it down on its own — it would sit there
+    # holding a privileged rw mount of the Docker socket until its
+    # reconnection timeout expires. Guarded so a run that started nothing
+    # (plugin disabled, xdist worker) doesn't import testcontainers for it.
+    if ryuk_maybe_running():
+        shutdown_ryuk()
 
     if _env_snapshot is not None:
         try:
