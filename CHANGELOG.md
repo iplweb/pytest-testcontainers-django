@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-07
+
+No runtime change — behaviour is identical to 0.3.1. This release exists to
+move publishing onto a verifiable path and to prove that path works.
+
+### Changed
+
+- Releases are now published from GitHub Actions via PyPI Trusted Publishing
+  (OIDC) on a `v*` tag, instead of `uv publish` from a maintainer's machine
+  against a long-lived API token. Nothing needs to hold an upload credential
+  any more. The workflow refuses to publish unless lint and the suite pass,
+  the tag matches the version in `pyproject.toml` (PyPI never lets a version
+  be re-uploaded, so a mismatch is unfixable), and `twine check --strict` is
+  clean.
+- GitHub Actions are pinned to their Node 24 releases — `actions/checkout`
+  v7.0.1, `actions/setup-python` v7.0.0 and `astral-sh/setup-uv` v9.0.0.
+  GitHub had deprecated Node 20 and was already force-running the old pins
+  on Node 24.
+
 ## [0.3.1] - 2026-08-07
 
 ### Fixed
