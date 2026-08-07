@@ -30,6 +30,8 @@ classifiers = [
     "Framework :: Django :: 5.0",
     "Framework :: Django :: 5.1",
     "Framework :: Django :: 5.2",
+    "Framework :: Django :: 6.0",
+    "Framework :: Django :: 6.1",
     "Framework :: Pytest",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -67,6 +69,7 @@ dev = [
 ]
 
 [project.urls]
+Funding = "https://buymeacoffee.com/mpasternak"
 Homepage = "https://github.com/iplweb/pytest-testcontainers-django"
 Repository = "https://github.com/iplweb/pytest-testcontainers-django"
 Issues = "https://github.com/iplweb/pytest-testcontainers-django/issues"
