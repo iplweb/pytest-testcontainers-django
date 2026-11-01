@@ -182,7 +182,7 @@ def start_postgres(
     reuse_name: str | None,
 ) -> ContainerHandle:
     """Construct + start (or attach to) a PostgresContainer."""
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     _check_daemon()
 
@@ -244,7 +244,7 @@ def start_redis(
     reuse_name: str | None,
 ) -> ContainerHandle:
     """Construct + start (or attach to) a RedisContainer."""
-    from testcontainers.redis import RedisContainer
+    from testcontainers.community.redis import RedisContainer
 
     _check_daemon()
 
