@@ -190,3 +190,29 @@ def test_is_reuse_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     assert is_reuse_enabled(cfg) is True
     monkeypatch.setenv("MYAPP_REUSE", "0")
     assert is_reuse_enabled(cfg) is False
+
+
+def test_poll_interval_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TC_POOLING_INTERVAL", raising=False)
+    _write_pyproject(tmp_path, "[tool.pytest-testcontainers-django]\n")
+    assert load_config(tmp_path).poll_interval == 0.1
+
+
+def test_poll_interval_from_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TC_POOLING_INTERVAL", "2")
+    _write_pyproject(tmp_path, "[tool.pytest-testcontainers-django]\npoll_interval = 0.3\n")
+    assert load_config(tmp_path).poll_interval == 0.3
+
+
+def test_poll_interval_defers_to_explicit_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TC_POOLING_INTERVAL", "0.5")
+    _write_pyproject(tmp_path, "[tool.pytest-testcontainers-django]\n")
+    assert load_config(tmp_path).poll_interval is None
+
+
+@pytest.mark.parametrize("bad", [0, -1.0])
+def test_validate_rejects_non_positive_poll_interval(bad: float) -> None:
+    with pytest.raises(ConfigError, match="poll_interval"):
+        validate(DjangoContainerConfig(poll_interval=bad))

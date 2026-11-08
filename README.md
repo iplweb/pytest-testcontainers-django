@@ -324,6 +324,7 @@ the import-time-read race that this package solves.
 | `redis_host_env`              | `DJANGO_REDIS_HOST`              |                                                  |
 | `redis_port_env`              | `DJANGO_REDIS_PORT`              |                                                  |
 | `use_django_pg_baseline`      | `false`                          | Auto-prepend `django-pg-baseline`'s artifact     |
+| `poll_interval`               | `0.1`                            | Seconds between readiness probes at startup (startup timeout unchanged). Unset + `TC_POOLING_INTERVAL` in env = testcontainers' value |
 
 ## Troubleshooting
 

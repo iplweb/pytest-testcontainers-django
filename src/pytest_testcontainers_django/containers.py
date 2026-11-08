@@ -21,7 +21,9 @@ breakage is contained at one spot if #1 evolves.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -168,6 +170,34 @@ def _start_or_attach(
         f"the name. Remove it manually:\n"
         f"  docker rm -f {reuse_name}"
     )
+
+
+@contextlib.contextmanager
+def poll_interval_override(seconds: float | None):
+    """Poll container readiness every *seconds* while the block runs.
+
+    testcontainers reads ``testcontainers_config.sleep_time`` when a wait
+    strategy is constructed (Redis: in the container constructor, Postgres: in
+    ``start()``), so the override must wrap both construction and start.
+
+    Its startup timeout is ``max_tries * sleep_time``; lowering only the
+    interval would shrink the timeout too (1 s -> 0.1 s turns 120 s into 12 s,
+    too little for a cold Postgres seeded from init scripts on a slow CI
+    runner). ``max_tries`` is scaled so the timeout stays the same. Both values
+    are restored afterwards. ``None`` is a no-op.
+    """
+    if seconds is None:
+        yield
+        return
+    from testcontainers.core.config import testcontainers_config as tc
+
+    old_sleep, old_tries = tc.sleep_time, tc.max_tries
+    tc.sleep_time = seconds
+    tc.max_tries = max(1, math.ceil(old_sleep * old_tries / seconds))
+    try:
+        yield
+    finally:
+        tc.sleep_time, tc.max_tries = old_sleep, old_tries
 
 
 def start_postgres(
@@ -324,6 +354,7 @@ __all__ = [
     "ContainerHandle",
     "DockerNotRunningError",
     "ephemeral_name",
+    "poll_interval_override",
     "reuse_name",
     "ryuk_maybe_running",
     "shutdown_ryuk",
