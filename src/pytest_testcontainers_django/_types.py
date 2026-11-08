@@ -18,6 +18,8 @@ DEFAULT_DB_ENV_NAMES: dict[str, str] = {
     "test_template": "DJANGO_DB_TEST_TEMPLATE",
 }
 
+DEFAULT_POLL_INTERVAL: float = 0.1
+
 DEFAULT_REDIS_ENV_NAMES: dict[str, str] = {
     "host": "DJANGO_REDIS_HOST",
     "port": "DJANGO_REDIS_PORT",
@@ -52,10 +54,16 @@ class DjangoContainerConfig:
     disable_env: str = "PYTEST_TESTCONTAINERS_DISABLE"
     reuse_env: str = "PYTEST_TESTCONTAINERS_REUSE"
     use_django_pg_baseline: bool = False
+    # Seconds between readiness probes while a container starts. testcontainers
+    # polls every TC_POOLING_INTERVAL (default 1 s), so a Postgres that is ready
+    # after ~1.5 s is only noticed at 2 s. ``None`` = keep testcontainers' own
+    # setting. The total startup timeout is preserved either way.
+    poll_interval: float | None = DEFAULT_POLL_INTERVAL
 
 
 __all__ = [
     "DEFAULT_DB_ENV_NAMES",
+    "DEFAULT_POLL_INTERVAL",
     "DEFAULT_REDIS_ENV_NAMES",
     "DjangoContainerConfig",
     "PostgresService",

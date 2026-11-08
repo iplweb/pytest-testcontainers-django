@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `poll_interval` (pyproject key / `DjangoContainerConfig.poll_interval`):
+  seconds between readiness probes while the Postgres and Redis containers
+  start. Default `0.1`. testcontainers polls every `TC_POOLING_INTERVAL`
+  (1 s by default), so a Postgres ready after ~1.5 s was only noticed at
+  2 s; with `0.1` every pytest run starts ~0.7 s sooner (measured on a
+  Django project seeding Postgres from a baseline dump). The startup timeout
+  (`max_tries * sleep_time` in testcontainers) is preserved by scaling
+  `max_tries`, and both values are restored once the containers are up.
+  An explicit `TC_POOLING_INTERVAL` in the environment is respected when the
+  key is not set.
+
 ## [0.3.3] - 2026-11-01
 
 ### Changed

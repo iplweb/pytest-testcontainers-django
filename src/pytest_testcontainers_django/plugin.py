@@ -34,6 +34,7 @@ from pytest_testcontainers_django._types import DjangoContainerConfig
 from pytest_testcontainers_django.containers import (
     ContainerHandle,
     DockerNotRunningError,
+    poll_interval_override,
     reuse_name,
     ryuk_maybe_running,
     shutdown_ryuk,
@@ -291,22 +292,23 @@ def pytest_load_initial_conftests(
     redis_reuse_name = reuse_name("redis") if _reuse_active else None
 
     try:
-        _pg_handle = start_postgres(
-            image=config.postgres.image,
-            user=config.postgres.user,
-            password=config.postgres.password,
-            database=config.postgres.database,
-            internal_port=config.postgres.internal_port,
-            env=config.postgres.env,
-            init_scripts=config.postgres.init_scripts,
-            reuse_name=pg_reuse_name,
-        )
-        if config.redis is not None:
-            _redis_handle = start_redis(
-                image=config.redis.image,
-                internal_port=config.redis.internal_port,
-                reuse_name=redis_reuse_name,
+        with poll_interval_override(config.poll_interval):
+            _pg_handle = start_postgres(
+                image=config.postgres.image,
+                user=config.postgres.user,
+                password=config.postgres.password,
+                database=config.postgres.database,
+                internal_port=config.postgres.internal_port,
+                env=config.postgres.env,
+                init_scripts=config.postgres.init_scripts,
+                reuse_name=pg_reuse_name,
             )
+            if config.redis is not None:
+                _redis_handle = start_redis(
+                    image=config.redis.image,
+                    internal_port=config.redis.internal_port,
+                    reuse_name=redis_reuse_name,
+                )
     except DockerNotRunningError as exc:
         raise pytest.UsageError(
             "[pytest-testcontainers-django] Docker daemon is not reachable. "

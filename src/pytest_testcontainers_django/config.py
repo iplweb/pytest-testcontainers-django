@@ -22,6 +22,7 @@ else:  # pragma: no cover — exercised on 3.10
 
 from pytest_testcontainers_django._types import (
     DEFAULT_DB_ENV_NAMES,
+    DEFAULT_POLL_INTERVAL,
     DEFAULT_REDIS_ENV_NAMES,
     DjangoContainerConfig,
     PostgresService,
@@ -135,7 +136,21 @@ def _config_from_table(table: dict[str, Any], project_root: Path) -> DjangoConta
         disable_env=str(table.get("disable_env", DjangoContainerConfig.disable_env)),
         reuse_env=str(table.get("reuse_env", DjangoContainerConfig.reuse_env)),
         use_django_pg_baseline=bool(table.get("use_django_pg_baseline", False)),
+        poll_interval=_resolve_poll_interval(table),
     )
+
+
+def _resolve_poll_interval(table: dict[str, Any]) -> float | None:
+    """``poll_interval`` from pyproject; an explicit ``TC_POOLING_INTERVAL`` wins.
+
+    Precedence: pyproject key > ``TC_POOLING_INTERVAL`` env var (left to
+    testcontainers, i.e. ``None``) > :data:`DEFAULT_POLL_INTERVAL`.
+    """
+    if "poll_interval" in table:
+        return float(table["poll_interval"])
+    if os.environ.get("TC_POOLING_INTERVAL"):
+        return None
+    return DEFAULT_POLL_INTERVAL
 
 
 def load_config(rootdir: Path) -> DjangoContainerConfig:
@@ -192,6 +207,9 @@ def validate(config: DjangoContainerConfig) -> None:
         for key in ("host", "port"):
             if not redis_env.get(key):
                 raise ConfigError(f"RedisService.env_names is missing required key: {key!r}")
+
+    if config.poll_interval is not None and not config.poll_interval > 0:
+        raise ConfigError(f"poll_interval must be > 0 seconds, got {config.poll_interval!r}")
 
     if pg.internal_port <= 0 or pg.internal_port > 65535:
         raise ConfigError(f"postgres_internal_port out of range: {pg.internal_port}")
