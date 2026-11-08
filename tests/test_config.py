@@ -216,3 +216,18 @@ def test_poll_interval_defers_to_explicit_env(
 def test_validate_rejects_non_positive_poll_interval(bad: float) -> None:
     with pytest.raises(ConfigError, match="poll_interval"):
         validate(DjangoContainerConfig(poll_interval=bad))
+
+
+def test_postgres_connect_default_is_port(tmp_path: Path) -> None:
+    _write_pyproject(tmp_path, "[tool.pytest-testcontainers-django]\n")
+    assert load_config(tmp_path).postgres.connect == "port"
+
+
+def test_postgres_connect_from_pyproject(tmp_path: Path) -> None:
+    _write_pyproject(tmp_path, '[tool.pytest-testcontainers-django]\npostgres_connect = "auto"\n')
+    assert load_config(tmp_path).postgres.connect == "auto"
+
+
+def test_validate_rejects_unknown_postgres_connect() -> None:
+    with pytest.raises(ConfigError, match="postgres_connect"):
+        validate(DjangoContainerConfig(postgres=PostgresService(connect="tcp")))

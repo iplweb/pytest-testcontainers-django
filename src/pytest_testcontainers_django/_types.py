@@ -20,6 +20,8 @@ DEFAULT_DB_ENV_NAMES: dict[str, str] = {
 
 DEFAULT_POLL_INTERVAL: float = 0.1
 
+POSTGRES_CONNECT_MODES: tuple[str, ...] = ("port", "socket", "auto")
+
 DEFAULT_REDIS_ENV_NAMES: dict[str, str] = {
     "host": "DJANGO_REDIS_HOST",
     "port": "DJANGO_REDIS_PORT",
@@ -37,6 +39,11 @@ class PostgresService:
     init_scripts: list[Path] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     env_names: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_DB_ENV_NAMES))
+    # How Django reaches Postgres: "port" (the mapped TCP port, default),
+    # "socket" (a Unix socket bind-mounted to the host — ~3x lower per-query
+    # latency than the userland docker-proxy; Linux + native Docker only) or
+    # "auto" (socket when it works, otherwise port). See POSTGRES_CONNECT_MODES.
+    connect: str = "port"
 
 
 @dataclass
@@ -65,6 +72,7 @@ __all__ = [
     "DEFAULT_DB_ENV_NAMES",
     "DEFAULT_POLL_INTERVAL",
     "DEFAULT_REDIS_ENV_NAMES",
+    "POSTGRES_CONNECT_MODES",
     "DjangoContainerConfig",
     "PostgresService",
     "RedisService",

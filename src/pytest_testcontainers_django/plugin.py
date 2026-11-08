@@ -302,6 +302,7 @@ def pytest_load_initial_conftests(
                 env=config.postgres.env,
                 init_scripts=config.postgres.init_scripts,
                 reuse_name=pg_reuse_name,
+                connect=config.postgres.connect,
             )
             if config.redis is not None:
                 _redis_handle = start_redis(

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-08
+
+### Added
+
+- `postgres_connect` (pyproject key / `PostgresService.connect`): how Django
+  reaches Postgres. `"port"` (default, unchanged behaviour) uses the mapped TCP
+  port. `"socket"` bind-mounts a short host directory (`/tmp/tcpg-*`) into the
+  container as an *extra* `unix_socket_directories` entry and injects that
+  directory as the DB host (libpq treats a host starting with `/` as a socket
+  dir) and the container-internal port as the DB port. `"auto"` does that when
+  it works and falls back to the TCP port otherwise.
+  - Why: on Linux the mapped port goes through the userland `docker-proxy`;
+    a `SELECT 1` roundtrip measured 26-28 µs through it vs ~9 µs over the
+    socket. On a Django suite of ~11k tests (`-n 12`) that was 133.8 s ->
+    118.3 s wall (-11.5%).
+  - The extra socket dir is added *next to* the image default, never instead
+    of it: Postgres only fails when it can create no socket at all, so a mount
+    the host cannot use (SELinux, rootless or VM-backed Docker) degrades to a
+    log line and TCP instead of a container that never starts.
+  - Only for ephemeral containers on Linux. Reuse mode and non-Linux hosts
+    (Docker Desktop / OrbStack / colima run containers in a VM, where a socket
+    is not connectable from the host) stay on TCP.
+  - Socket files are removed inside the container before it is force-removed
+    (they belong to the container's postgres uid), then the host dir is
+    deleted.
+
 ## [0.4.0] - 2026-11-08
 
 ### Added
