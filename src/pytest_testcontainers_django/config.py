@@ -24,6 +24,7 @@ from pytest_testcontainers_django._types import (
     DEFAULT_DB_ENV_NAMES,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_REDIS_ENV_NAMES,
+    POSTGRES_CONNECT_MODES,
     DjangoContainerConfig,
     PostgresService,
     RedisService,
@@ -114,6 +115,7 @@ def _config_from_table(table: dict[str, Any], project_root: Path) -> DjangoConta
         init_scripts=_resolve_init_scripts(table.get("postgres_init_scripts"), project_root),
         env=dict(table.get("postgres_env", {}) or {}),
         env_names=db_env_names,
+        connect=str(table.get("postgres_connect", PostgresService.connect)),
     )
 
     redis: RedisService | None = None
@@ -207,6 +209,11 @@ def validate(config: DjangoContainerConfig) -> None:
         for key in ("host", "port"):
             if not redis_env.get(key):
                 raise ConfigError(f"RedisService.env_names is missing required key: {key!r}")
+
+    if pg.connect not in POSTGRES_CONNECT_MODES:
+        raise ConfigError(
+            f"postgres_connect must be one of {list(POSTGRES_CONNECT_MODES)}, got {pg.connect!r}"
+        )
 
     if config.poll_interval is not None and not config.poll_interval > 0:
         raise ConfigError(f"poll_interval must be > 0 seconds, got {config.poll_interval!r}")

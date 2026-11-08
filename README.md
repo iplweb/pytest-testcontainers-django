@@ -309,6 +309,7 @@ the import-time-read race that this package solves.
 | `postgres_template`           | (= `postgres_database` when init scripts set, else unset) | Value injected as `DATABASES['TEST']['TEMPLATE']` |
 | `postgres_init_scripts`       | `[]`                             | Paths mounted into `/docker-entrypoint-initdb.d/`|
 | `postgres_env`                | `{}`                             | Image-specific env (e.g. tuning flags)           |
+| `postgres_connect`            | `port`                           | `port` (mapped TCP port), `socket` (Unix socket bind-mounted to the host; Linux + native Docker, ephemeral containers) or `auto` (socket when it works, else port) |
 | `db_host_env`                 | `DJANGO_DB_HOST`                 | Env var written with the resolved host           |
 | `db_port_env`                 | `DJANGO_DB_PORT`                 | Env var written with the resolved port           |
 | `db_name_env`                 | `DJANGO_DB_NAME`                 | Env var written with `postgres_database`         |

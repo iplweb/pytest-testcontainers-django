@@ -25,6 +25,9 @@ import contextlib
 import logging
 import math
 import os
+import socket
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,15 +61,79 @@ class ContainerHandle:
     is_bound_to_existing: bool
     _instance: Any  # testcontainers DockerContainer; we only call .stop() on it
     _owns_instance: bool  # False when bound to a pre-existing reuse container
+    # Host directory bind-mounted as an extra Unix-socket dir (connect="socket"/"auto").
+    _socket_dir: str | None = None
 
     def stop(self) -> None:
         if not self._owns_instance:
             return
         deregister_atexit_stop(self._instance)
+        if self._socket_dir is not None:
+            # testcontainers force-removes the container (SIGKILL), so Postgres
+            # never unlinks its socket; the files belong to the container's
+            # postgres uid and the host user could not delete them afterwards.
+            try:
+                self._instance.exec(["sh", "-c", f"rm -f {SOCKET_MOUNT}/.s.PGSQL.*"])
+            except Exception:
+                logger.debug("cleanup: removing socket files failed", exc_info=True)
         try:
             self._instance.stop()
         except Exception:
             logger.exception("cleanup: container.stop() failed")
+        if self._socket_dir is not None:
+            try:
+                os.rmdir(self._socket_dir)
+            except OSError:
+                logger.debug("cleanup: socket dir %s not removed", self._socket_dir, exc_info=True)
+
+
+# Extra Unix-socket directory inside the Postgres container, bind-mounted from
+# the host. Kept NEXT TO the image default (/var/run/postgresql) instead of
+# replacing it: Postgres only fails when it can create no socket at all, so a
+# mount the host cannot share (SELinux, Docker Desktop's VM) degrades to a log
+# line and plain TCP instead of a container that never starts.
+SOCKET_MOUNT = "/tcpsock"
+
+
+def _wants_socket(connect: str, reuse_name: str | None) -> bool:
+    """Decide whether to try the host-mounted Unix socket for this run."""
+    if connect == "port":
+        return False
+    if reuse_name is not None:
+        # A reused container outlives the run (and /tmp may be wiped at reboot
+        # while the container survives), so its mount source is not ours to
+        # manage. Reuse already trades isolation for speed; stay on TCP.
+        logger.info("postgres_connect=%s: reuse mode, using the TCP port", connect)
+        return False
+    if not sys.platform.startswith("linux"):
+        # Docker Desktop / OrbStack / colima run containers in a VM: a socket
+        # created there is not connectable from the host.
+        logger.info("postgres_connect=%s: not Linux, using the TCP port", connect)
+        return False
+    return True
+
+
+def _make_socket_dir() -> str:
+    # Short path under /tmp: AF_UNIX paths are limited to ~107 bytes, and the
+    # socket file name (.s.PGSQL.<port>) is appended to it.
+    path = tempfile.mkdtemp(prefix="tcpg-", dir="/tmp")
+    os.chmod(path, 0o777)  # Postgres in the container runs as its own uid
+    return path
+
+
+def _socket_reachable(socket_dir: str, port: int) -> bool:
+    path = os.path.join(socket_dir, f".s.PGSQL.{port}")
+    if not os.path.exists(path):
+        return False
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(1)
+    try:
+        probe.connect(path)
+    except OSError:
+        return False
+    finally:
+        probe.close()
+    return True
 
 
 def _ensure_docker_host_env() -> None:
@@ -210,8 +277,15 @@ def start_postgres(
     env: dict[str, str],
     init_scripts: list[Path],
     reuse_name: str | None,
+    connect: str = "port",
 ) -> ContainerHandle:
-    """Construct + start (or attach to) a PostgresContainer."""
+    """Construct + start (or attach to) a PostgresContainer.
+
+    ``connect`` — see :attr:`PostgresService.connect`. With "socket"/"auto"
+    the returned handle's ``host`` is a host directory holding the Postgres
+    Unix socket (libpq treats a host starting with ``/`` as a socket dir) and
+    ``port`` is the container-internal port (it names the socket file).
+    """
     from testcontainers.community.postgres import PostgresContainer
 
     _check_daemon()
@@ -232,6 +306,14 @@ def start_postgres(
             str(script),
             f"/docker-entrypoint-initdb.d/{index:02d}-{script.name}",
             "ro",
+        )
+
+    socket_dir: str | None = None
+    if _wants_socket(connect, reuse_name):
+        socket_dir = _make_socket_dir()
+        container.with_volume_mapping(socket_dir, SOCKET_MOUNT, "rw")
+        container.with_command(
+            ["postgres", "-c", f"unix_socket_directories=/var/run/postgresql,{SOCKET_MOUNT}"]
         )
 
     name = reuse_name or ephemeral_name("psql")
@@ -255,6 +337,34 @@ def start_postgres(
         register_atexit_stop(instance)
     start_or_raise(instance, image)
 
+    if socket_dir is not None:
+        if _socket_reachable(socket_dir, internal_port):
+            return ContainerHandle(
+                host=socket_dir,
+                port=internal_port,
+                name=name,
+                is_bound_to_existing=False,
+                _instance=instance,
+                _owns_instance=True,
+                _socket_dir=socket_dir,
+            )
+        message = (
+            f"Postgres Unix socket in {socket_dir} is not reachable from the host "
+            "(SELinux, rootless or VM-backed Docker?)"
+        )
+        if connect == "socket":
+            ContainerHandle(
+                host="",
+                port=0,
+                name=name,
+                is_bound_to_existing=False,
+                _instance=instance,
+                _owns_instance=True,
+                _socket_dir=socket_dir,
+            ).stop()
+            raise RuntimeError(f'{message}; set postgres_connect = "auto" or "port".')
+        logger.warning("%s; falling back to the TCP port.", message)
+
     host = instance.get_container_host_ip()
     port = int(instance.get_exposed_port(internal_port))
     return ContainerHandle(
@@ -264,6 +374,7 @@ def start_postgres(
         is_bound_to_existing=False,
         _instance=instance,
         _owns_instance=reuse_name is None,
+        _socket_dir=socket_dir,
     )
 
 
@@ -351,6 +462,7 @@ def ephemeral_name(service_slug: str) -> str:
 
 
 __all__ = [
+    "SOCKET_MOUNT",
     "ContainerHandle",
     "DockerNotRunningError",
     "ephemeral_name",
